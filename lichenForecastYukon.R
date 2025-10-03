@@ -15,7 +15,8 @@ defineModule(sim, list(
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "lichenForecastYukon.Rmd"),
-  reqdPkgs = list("SpaDES.core (>= 2.1.5.9003)", "ggplot2", "reticulate"),
+  reqdPkgs = list("SpaDES.core (>= 2.1.5.9003)", "ggplot2", "reticulate", 
+                  "whitebox"),
   parameters = bindrows(
     #defineParameter("paramName", "paramClass", value, min, max, "parameter description"),
     defineParameter("predictionInterval", "numeric", 10, NA, NA, 
@@ -131,9 +132,6 @@ Init <- function(sim) {
   # Train ensemble classifier and generate a presence absence map over Yukon
   #py_run_file("./lichenPredictYukon/Python/trainGEEClassifier.py")
   
-  # Prepare covariates to use for classifier to be used for temporal forecast
-  #prepCovariates()
-  
   #Save covariates as a Data table
   
   # Train classifier on forecastable covariates
@@ -165,11 +163,11 @@ plotFun <- function(sim) {
 predictLichenPresence <- function(sim, inputCSVName, outputCSVName) {
   # Employing sys args to get reticulate to run a Python script with
   # inputted CSVs
-  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', inputCSVName, outputCSVName)
-  py_run_string(cmd)
-  
-  # Running the Python script to predict with a saved classifier
-  py_run_file("./lichenPredictYukon/Python/predictWithSavedClassifier.py")
+  #cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', inputCSVName, outputCSVName)
+  #py_run_string(cmd)
+  #
+  ## Running the Python script to predict with a saved classifier
+  #py_run_file("./lichenPredictYukon/Python/predictWithSavedClassifier.py")
   
   return(invisible(sim))
 }

@@ -2,13 +2,10 @@ library(terra)
 library(sf)
 library(dplyr)
 library(ggplot2)
-library(leaflet)
-library(caret)
 library(data.table)
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(whitebox)
-library(tictoc)
 
 prepCovariates <- function(){
   # Getting yukon SF object to build a template from

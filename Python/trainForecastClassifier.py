@@ -7,12 +7,19 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 import joblib
 from xgboost import XGBClassifier
+import sys
 
 def main():
+  if len(sys.argv) != 2:
+      print("Incorrect number of sys inputs to `trainForecastClassifier.py`")
+      sys.exit(1)
+      
   # Reading in the data
-  df = pd.read_csv("./inputsStack.csv")
+  df = pd.read_csv(sys.argv[0])
   
   # Renaming columns
+  import pdb; pdb.set_trace()
+  # REVIST THIS RENAMING OF COLUMNS
   rename_map = {
       "probability": "lichenPresence",
       "slopeDEM": "slope",
@@ -22,9 +29,6 @@ def main():
       "50n150w_20101117_gmted_med075": "elevation",
   }
   df.rename(columns=rename_map, inplace=True)
-  
-  # Dropping location columns
-  df.drop(columns=["x", "y"], inplace=True)
   
   # Splitting training and test set
   train_set, test_set = train_test_split(
@@ -82,8 +86,8 @@ def main():
   print("Classification Report:\n", classification_report(y_test, y_pred))
   
   # Save best model
-  joblib.dump(clf, "bestModel.pkl")
-  print("Best model saved to `bestModel.pkl`")
+  joblib.dump(clf, sys.argv[1])
+  print(f"Best model saved to `{sys.argv[1]}`")
   
   # Best Params RF Best parameters: {'max_depth': 20, 'max_features': 'sqrt', 'min_samples_leaf': 2, 'min_samples_split': 5, 'n_estimators': 200}
   # Accuracy ~0.7 on both classes

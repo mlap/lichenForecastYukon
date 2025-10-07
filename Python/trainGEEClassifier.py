@@ -9,8 +9,14 @@ from ee.ee_exception import EEException
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 import os
+import sys
 
 def main():
+  
+  if len(sys.argv) != 3:
+      print("Incorrect number of sys inputs to `trainGEEClassifier.py`")
+      sys.exit(1)
+  
   # Initialize the Earth Engine module.
   ee.Authenticate()
   ee.Initialize()
@@ -22,7 +28,9 @@ def main():
   
   
   # Getting lichen presence data from a local GeoJSON file
-  geojson_path = "./caribouLichen.geojson"
+  import pdb; pdb.set_trace()
+  # NEED TO FIX PATH HERE
+  geojson_path = sys.argv[0]
   
   # Convert GeoJSON to Earth Engine FeatureCollection
   fc = geemap.geojson_to_ee(geojson_path)
@@ -37,10 +45,6 @@ def main():
   # Randomly sample points
   train_positives = positive_samples.filter(ee.Filter.lt('random', 0.8))
   train_negatives = negative_samples.filter(ee.Filter.lt('random', 0.8))
-  
-  # Trying resampling
-  num_positives = train_positives.size()
-  num_negatives = train_negatives.size()
   
   training_ = train_positives.merge(train_negatives)
   
@@ -164,14 +168,14 @@ def main():
           classProperty='presenceCaribouLichen',
           inputProperties=embeddingsImage.bandNames()
       )
-      # Get probability band (if supported)
+      # Get probability band
       classified = embeddingsImage.classify(classifier, outputName='probability')
       proba_images.append(classified.select('probability'))
   
   # Average probabilities and create an ensemble prediction
   # acoording to a threshold
   ensemble_proba = ee.ImageCollection(proba_images).mean()
-  ensemble_prediction = ensemble_proba.gt(0.3) # Might want to change this threshold
+  ensemble_prediction = ensemble_proba.gt(0.3) # Might want to change this threshold; likely want to have a validation set to choose this threshold
   
   # Sample ensemble prediction at test points
   ensemble_test_samples = ensemble_prediction.rename('classification').sampleRegions(
@@ -200,7 +204,7 @@ def main():
       folder='EarthEngineExports',  # Change as needed
       fileNamePrefix='ensemble_prediction',
       region=geometry.bounds().getInfo()['coordinates'],
-      scale=240,  # or 240 if you want 240m pixels
+      scale=sys.argv[1],
       crs='EPSG:3579',  # or match your desired projection
       maxPixels=1e13,
       fileFormat='GeoTIFF'
@@ -232,7 +236,7 @@ def main():
   for file in file_list:
       if file['title'].startswith(file_prefix):
           print(f"Downloading {file['title']} ...")
-          file.GetContentFile(file['title'])
+          file.GetContentFile(sys.argv[2])
           print(f"Downloaded {file['title']} to {os.getcwd()}")
 
 if __name__=="__main__":

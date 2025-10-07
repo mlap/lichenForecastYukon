@@ -60,7 +60,7 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
       sim <- Init(sim)
       
       # schedule future event(s)
-      sim <- scheduleEvent(sim, start(sim), "lichenForecastYukon", "predictLichenPresence")
+      sim <- scheduleEvent(sim, start(sim) + P(sim)$predictionInterval, "lichenForecastYukon", "predictLichenPresence")
     },
     plot = {
       # ! ----- EDIT BELOW ----- ! #
@@ -101,20 +101,6 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
       
       # ! ----- STOP EDITING ----- ! #
     },
-    event2 = {
-      # ! ----- EDIT BELOW ----- ! #
-      # do stuff for this event
-
-      # e.g., call your custom functions/methods here
-      # you can define your own methods below this `doEvent` function
-
-      # schedule future event(s)
-
-      # e.g.,
-      # sim <- scheduleEvent(sim, time(sim) + increment, "lichenForecastYukon", "templateEvent")
-
-      # ! ----- STOP EDITING ----- ! #
-    },
     warning(noEventWarning(sim))
   )
   return(invisible(sim))
@@ -125,17 +111,38 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
 Init <- function(sim) {
   # Run python script that creates lichen map using Google Earth Engine
   
-  # UNCOMMENT LATER
+  browser()
   # Get virtual env for Python
   installPyVirtualEnv("lichenPredictYukon")
+  # Need to install packages for this virtual env?
   
   # Train ensemble classifier and generate a presence absence map over Yukon
-  #py_run_file("./lichenPredictYukon/Python/trainGEEClassifier.py")
+  # Note need to save lichenData in googleDrive Folder! Put it there locally in interim  
+  geoJSONPath <- file.path(paths(sim)$inputPath, "lichenData.geojson")
+  outputPath <- file.path(paths(sim)$outputPath, "ensemble_prediction.tiff")
+  cmd <- sprintf('import sys; sys.argv = ["%s", "%s", "%s"]', 
+                 geoJSONPath, 
+                 terra::res(sim$rasterToMatch)[[1]])
+  py_run_string(cmd)
+  GEEClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "trainGEEClassifier.py")
+  py_run_file(GEEClassifierPath)
   
-  #Save covariates as a Data table
+  # NEED TO MERGE GEE MAP(ensemble_prediction.tiff) WITH LICHEN COVARIATES
+  # Save static and dynamic covariates as a csv
+  # NOTE THIS IS ONLY GIVING A DATA.TABLE FOR FORESTED PIXELS
+  covariatesDT <- sim$lichenStaticCovariates[sim$lichenDynamicCovariates, on = "id", nomatch = 0]
+  csvPath <- file.path(paths(sim)$inputPath, "lichenCovariates.csv")
+  data.table::fwrite(covariatesDT, file = csvPath, row.names = FALSE)
   
   # Train classifier on forecastable covariates
-  #py_run_file("./lichenPredictYukon/Python/trainForecastClassifier.py")
+  outputPath <- file.path(paths(sim)$outputPath, "bestModel.pkl")
+  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', csvPath, outputPath)
+  py_run_string(cmd)
+  trainClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "trainForecastClassifier.py")
+  py_run_file(trainClassifierPath)
+  
+  outputPath <- file.path(paths(sim)$outputPath, "lichenPrediction.csv")
+  sim <- predictLichenPresence(sim, csvPath, outputPath)
   
   return(invisible(sim))
 }
@@ -150,24 +157,22 @@ Save <- function(sim) {
 }
 
 ### template for plot events
-plotFun <- function(sim) {
+plotFun <- function(sim, outputCSVName) {
   # ! ----- EDIT BELOW ----- ! #
-  # do stuff for this event
-  sampleData <- data.frame("TheSample" = sample(1:10, replace = TRUE))
-  Plots(sampleData, fn = ggplotFn) # needs ggplot2
+  
+  
   
   # ! ----- STOP EDITING ----- ! #
   return(invisible(sim))
 }
 
 predictLichenPresence <- function(sim, inputCSVName, outputCSVName) {
-  # Employing sys args to get reticulate to run a Python script with
-  # inputted CSVs
-  #cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', inputCSVName, outputCSVName)
-  #py_run_string(cmd)
-  #
+  
   ## Running the Python script to predict with a saved classifier
-  #py_run_file("./lichenPredictYukon/Python/predictWithSavedClassifier.py")
+  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', inputCSVName, outputCSVName)
+  py_run_string(cmd)
+  savedClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "predictWithSavedClassifier.py")
+  py_run_file(savedClassifierPath)
   
   return(invisible(sim))
 }

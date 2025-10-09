@@ -16,19 +16,7 @@ def main():
       
   # Reading in the data
   df = pd.read_csv(sys.argv[0])
-  
-  # Renaming columns
-  import pdb; pdb.set_trace()
-  # REVIST THIS RENAMING OF COLUMNS
-  rename_map = {
-      "probability": "lichenPresence",
-      "slopeDEM": "slope",
-      "d8flowDEM": "wbt_twi",
-      "FIRE_YEAR": "tSinceFire",
-      "Type": "stand_class",
-      "50n150w_20101117_gmted_med075": "elevation",
-  }
-  df.rename(columns=rename_map, inplace=True)
+  df = df.dropna(subset=[c for c in df.columns if c != "pixelGroup"])
   
   # Splitting training and test set
   train_set, test_set = train_test_split(
@@ -39,9 +27,9 @@ def main():
   )
   
   # Separate features and target
-  X_train = train_set.drop(columns=["lichenPresence"])
+  X_train = train_set.drop(columns=["lichenPresence", "pixelGroup"])
   y_train = train_set["lichenPresence"].astype(int)
-  X_test = test_set.drop(columns=["lichenPresence"])
+  X_test = test_set.drop(columns=["lichenPresence", "pixelGroup"])
   y_test = test_set["lichenPresence"].astype(int)
   
   # Finding bias of the dataset

@@ -54,13 +54,15 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      browser()
       
-      # do stuff for this event
-      sim <- Init(sim)
+      # Create classifiers, else make prediction
+      if(P(sim)$initForecastClassifier) {
+        sim <- Init(sim)
+      } else {
+        sim <- scheduleEvent(sim, time(sim), "lichenForecastYukon", "predictLichenPresence")
+      }
       
       # schedule future event(s)
-      sim <- scheduleEvent(sim, start(sim) + P(sim)$predictionInterval, "lichenForecastYukon", "predictLichenPresence")
     },
     plot = {
       # ! ----- EDIT BELOW ----- ! #
@@ -92,12 +94,12 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
       
       # Predict the presence/absence of caribou lichen for the provided input
       # csv. Predictions will be found in `testOutputs.csv`
-      predictLichenPresence(sim, "mockInputs.csv", "testOutputs.csv") # Revisit naming here later
+      predictLichenPresence(sim) # Revisit naming here later
       
       # schedule future event(s)
       
       # e.g.,
-      sim <- scheduleEvent(sim, time(sim) + P(sim)$predictionInterval, "lichenPredictYukon", "predictLichenPresence")
+      sim <- scheduleEvent(sim, time(sim) + P(sim)$predictionInterval, "lichenForecastYukon", "predictLichenPresence")
       
       # ! ----- STOP EDITING ----- ! #
     },
@@ -111,38 +113,53 @@ doEvent.lichenForecastYukon = function(sim, eventTime, eventType) {
 Init <- function(sim) {
   # Run python script that creates lichen map using Google Earth Engine
   
-  browser()
   # Get virtual env for Python
-  installPyVirtualEnv("lichenPredictYukon")
-  # Need to install packages for this virtual env?
+  if (!virtualenv_exists("lichenForecastYukon")){
+    virtualenv_create("lichenForecastYukon")
+    requirementsPath <- file.path(paths(sim)$inputPath, "requirements.txt") # NB THIS NEEDS TO BE IN INPUTS DIR
+    virtualenv_install(
+      "lichenForecastYukon", 
+      requirements = requirementsPath, 
+      ignore_installed = TRUE
+    )
+  } else {
+    use_virtualenv("lichenForecastYukon", required = TRUE)
+  }
+  # THIS IS NOT WORKING ON REMOTE MACHINE; ISSUE WITH CONNECTING A BROWSER
+  # WILL JUST DO THIS LOCALLY
+  if (P(sim)$trainGEEClassifier) {
+    # Train ensemble classifier and generate a presence absence map over Yukon
+    # Note need to save lichenData in googleDrive Folder! Put it there locally in interim  
+    geoJSONPath <- file.path(paths(sim)$inputPath, "caribouLichen.geojson")
+    outputTIFFPath <- file.path(paths(sim)$outputPath, "ensemble_prediction.tif")
+    cmd <- sprintf('import sys; sys.argv = ["%s", "%s", "%s", "%s"]', 
+                   geoJSONPath, 
+                   terra::res(sim$rasterToMatch)[[1]],
+                   outputTIFFPath,
+                   P(sim)$eeProjectName)
+    py_run_string(cmd)
+    GEEClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "trainGEEClassifier.py")
+    py_run_file(GEEClassifierPath)
+  }
   
-  # Train ensemble classifier and generate a presence absence map over Yukon
-  # Note need to save lichenData in googleDrive Folder! Put it there locally in interim  
-  geoJSONPath <- file.path(paths(sim)$inputPath, "lichenData.geojson")
-  outputPath <- file.path(paths(sim)$outputPath, "ensemble_prediction.tiff")
-  cmd <- sprintf('import sys; sys.argv = ["%s", "%s", "%s"]', 
-                 geoJSONPath, 
-                 terra::res(sim$rasterToMatch)[[1]])
-  py_run_string(cmd)
-  GEEClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "trainGEEClassifier.py")
-  py_run_file(GEEClassifierPath)
-  
-  # NEED TO MERGE GEE MAP(ensemble_prediction.tiff) WITH LICHEN COVARIATES
-  # Save static and dynamic covariates as a csv
-  # NOTE THIS IS ONLY GIVING A DATA.TABLE FOR FORESTED PIXELS
-  covariatesDT <- sim$lichenStaticCovariates[sim$lichenDynamicCovariates, on = "id", nomatch = 0]
+  # Create a data.table to transfer to Python
+  generatedLichenRastPath <- file.path(paths(sim)$inputPath, "ensemble_prediction.tif")
+  generatedLichenRast <- rast(generatedLichenRastPath)
+  generatedLichenRast_rs <- terra::resample(generatedLichenRast, sim$pixelGroupMap, "max") |>
+    reproducible::Cache()
+  generatedLichenRast_mask <- terra::mask(generatedLichenRast_rs, sim$studyArea)
+  sim$lichenDynamicCovariates$lichenPresence <- terra::values(generatedLichenRast_mask)
+  colsToAdd <- c("standAge", "standType", "lichenPresence")
+  covariatesDT <- cbind(sim$lichenStaticCovariates, sim$lichenDynamicCovariates[, ..colsToAdd])
   csvPath <- file.path(paths(sim)$inputPath, "lichenCovariates.csv")
   data.table::fwrite(covariatesDT, file = csvPath, row.names = FALSE)
   
   # Train classifier on forecastable covariates
   outputPath <- file.path(paths(sim)$outputPath, "bestModel.pkl")
-  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', csvPath, outputPath)
+  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', csvPath, outputPath) # NB outputPath is not the expected output
   py_run_string(cmd)
   trainClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "trainForecastClassifier.py")
   py_run_file(trainClassifierPath)
-  
-  outputPath <- file.path(paths(sim)$outputPath, "lichenPrediction.csv")
-  sim <- predictLichenPresence(sim, csvPath, outputPath)
   
   return(invisible(sim))
 }
@@ -166,13 +183,30 @@ plotFun <- function(sim, outputCSVName) {
   return(invisible(sim))
 }
 
-predictLichenPresence <- function(sim, inputCSVName, outputCSVName) {
+predictLichenPresence <- function(sim) {
   
-  ## Running the Python script to predict with a saved classifier
-  cmd <- sprintf('import sys; sys.argv = ["%s", "%s"]', inputCSVName, outputCSVName)
+  # Get path names
+  colsToAdd <- c("standAge", "standType")
+  covariatesDT <- cbind(sim$lichenStaticCovariates, sim$lichenDynamicCovariates[, ..colsToAdd])
+  inputCSVPath <- file.path(paths(sim)$inputPath, "inputForecastCovariates.csv")
+  data.table::fwrite(covariatesDT, file = inputCSVPath, row.names = FALSE)
+  
+  # Running the Python script to predict with a saved classifier
+  outputCSVPath <- file.path(paths(sim)$inputPath, "lichenPredictions.csv")
+  modelPath <- file.path(paths(sim)$outputPath, "bestModel.pkl")
+  cmd <- sprintf('import sys; sys.argv = ["%s", "%s", "%s"]', inputCSVPath, outputCSVPath, modelPath)
   py_run_string(cmd)
   savedClassifierPath <- file.path(paths(sim)$modulePath[[1]], "lichenForecastYukon", "Python", "predictWithSavedClassifier.py")
   py_run_file(savedClassifierPath)
+  
+  # Upload csv as raster and save to outputs
+  lichenPredictions <- data.table::fread(outputCSVPath)
+  lichenForecastRast <- sim$rasterToMatch
+  values(lichenForecastRast) <- lichenPredictions$predictedClass
+  
+  outputPredictionPath <- file.path(paths(sim)$outputPath, paste0("lichenPrediction", time(sim), ".tif"))
+  terra::writeRaster(lichenForecastRast, outputPredictionPath, overwrite = TRUE)
+  
   
   return(invisible(sim))
 }

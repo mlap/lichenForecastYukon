@@ -13,13 +13,13 @@ import sys
 
 def main():
   
-  if len(sys.argv) != 3:
+  if len(sys.argv) != 4:
       print("Incorrect number of sys inputs to `trainGEEClassifier.py`")
       sys.exit(1)
   
   # Initialize the Earth Engine module.
-  ee.Authenticate()
-  ee.Initialize()
+  project_name = sys.argv[3]
+  ee.Initialize(project = project_name)
   
   # Get Yukon geometry from GADM
   gadm = ee.FeatureCollection("FAO/GAUL/2015/level1")
@@ -28,7 +28,6 @@ def main():
   
   
   # Getting lichen presence data from a local GeoJSON file
-  import pdb; pdb.set_trace()
   # NEED TO FIX PATH HERE
   geojson_path = sys.argv[0]
   
@@ -72,32 +71,32 @@ def main():
   # List of classifiers and their parameter grids
   # to sample over for hyperparameter tuning
   model_grid = {
-      'smileRandomForest': {
-          'numberOfTrees': [10, 50, 100],
-          'variablesPerSplit': [None, 5, 10, 20],
-          'minLeafPopulation': [1, 5, 10],
-          'bagFraction': [0.5, 0.7, 0.9],
-          'maxNodes': [None, 10, 20]
-      },
-      'smileGradientTreeBoost': {
-          'numberOfTrees': [10, 50, 100],
-          'shrinkage': [0.005, 0.01, 0.1, 0.3],
-          'samplingRate': [0.5, 0.7, 0.9],
-          'maxNodes': [None, 10, 20],
-          'loss': ['LeastAbsoluteDeviation', 'Huber'],
-      },
-      'smileKNN': {
-          'k': [1, 3, 5, 8],
-          'searchMethod': ['AUTO', 'KD_TREE', 'COVER_TREE'],
-          'metric': ['EUCLIDEAN', 'MANHATTAN', 'MAHALANOBIS'],
-      },
+      #'smileRandomForest': {
+      #    'numberOfTrees': [10, 50, 100],
+      #    'variablesPerSplit': [None, 5, 10, 20],
+      #    'minLeafPopulation': [1, 5, 10],
+      #    'bagFraction': [0.5, 0.7, 0.9],
+      #    'maxNodes': [None, 10, 20]
+      #},
+      #'smileGradientTreeBoost': {
+      #    'numberOfTrees': [10, 50, 100],
+      #    'shrinkage': [0.005, 0.01, 0.1, 0.3],
+      #    'samplingRate': [0.5, 0.7, 0.9],
+      #    'maxNodes': [None, 10, 20],
+      #    'loss': ['LeastAbsoluteDeviation', 'Huber'],
+      #},
+      #'smileKNN': {
+      #    'k': [1, 3, 5, 8],
+      #    'searchMethod': ['AUTO', 'KD_TREE', 'COVER_TREE'],
+      #    'metric': ['EUCLIDEAN', 'MANHATTAN', 'MAHALANOBIS'],
+      #},
       'smileNaiveBayes': {
           'lambda': [0.000001, 0.0001, 0.001, 0.01, 0.1],
       },
-      'smileCart': {
-          'maxNodes': [None, 10, 20],
-          'minLeafPopulation': [1, 5, 10],
-      }    
+      #'smileCart': {
+      #    'maxNodes': [None, 10, 20],
+      #    'minLeafPopulation': [1, 5, 10],
+      #}    
   }
   
   best_acc = 0
@@ -204,7 +203,7 @@ def main():
       folder='EarthEngineExports',  # Change as needed
       fileNamePrefix='ensemble_prediction',
       region=geometry.bounds().getInfo()['coordinates'],
-      scale=sys.argv[1],
+      scale=int(sys.argv[1]),
       crs='EPSG:3579',  # or match your desired projection
       maxPixels=1e13,
       fileFormat='GeoTIFF'
